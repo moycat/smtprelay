@@ -172,7 +172,7 @@ func setupRemotes() {
 	logger := log.With().Str("remotes", *remotesStr).Logger()
 
 	if *remotesStr != "" {
-		for _, remoteURL := range strings.Split(*remotesStr, " ") {
+		for remoteURL := range strings.SplitSeq(*remotesStr, " ") {
 			r, err := ParseRemote(remoteURL)
 			if err != nil {
 				logger.Fatal().Msg(fmt.Sprintf("error parsing url: '%s': %v", remoteURL, err))
@@ -194,20 +194,20 @@ type protoAddr struct {
 }
 
 func splitProto(s string) protoAddr {
-	idx := strings.Index(s, "://")
-	if idx == -1 {
+	before, after, ok := strings.Cut(s, "://")
+	if !ok {
 		return protoAddr{
 			address: s,
 		}
 	}
 	return protoAddr{
-		protocol: s[0:idx],
-		address:  s[idx+3:],
+		protocol: before,
+		address:  after,
 	}
 }
 
 func setupListeners() {
-	for _, listenAddr := range strings.Split(*listenStr, " ") {
+	for listenAddr := range strings.SplitSeq(*listenStr, " ") {
 		pa := splitProto(listenAddr)
 
 		if localAuthRequired() && pa.protocol == "" {

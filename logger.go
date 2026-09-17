@@ -44,7 +44,7 @@ func setupLogger() {
 			Out:        writer,
 			NoColor:    true,
 			TimeFormat: "",
-			FormatTimestamp: func(i interface{}) string {
+			FormatTimestamp: func(i any) string {
 				return "" // avoid default time
 			},
 		}
