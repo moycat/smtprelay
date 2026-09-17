@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/chrj/smtpd"
 	"github.com/fsnotify/fsnotify"
@@ -320,29 +322,22 @@ func generateUUID() string {
 	return uniqueID.String()
 }
 
-func getTLSConfig() *tls.Config {
-	// Certificate loading / validation
-	if *localCert == "" || *localKey == "" {
-		log.Fatal().
-			Str("cert_file", *localCert).
-			Str("key_file", *localKey).
-			Msg("TLS certificate/key file not defined in config")
-	}
-
-	cert, err := tls.LoadX509KeyPair(*localCert, *localKey)
-	if err != nil {
-		log.Fatal().
-			Err(err).
-			Msg("cannot load X509 keypair")
+func getTLSConfig(manager *acmeManager) *tls.Config {
+	conf := &tls.Config{}
+	if manager != nil {
+		// Leave Certificates empty so clients without SNI also use the current
+		// certificate rather than a stale copy captured when the listener starts.
+		conf.GetCertificate = manager.GetCertificate
+	} else {
+		cert, err := tls.LoadX509KeyPair(*localCert, *localKey)
+		if err != nil {
+			log.Fatal().Err(err).Msg("cannot load X509 keypair")
+		}
+		conf.Certificates = []tls.Certificate{cert}
 	}
 
 	// TLS profile configuration
 	// tls.Config.CipherSuites only affects TLS 1.0–1.2.
-
-	// Base config: Go defaults unless overridden.
-	conf := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	}
 
 	profile := strings.ToLower(strings.TrimSpace(*tlsProfile))
 	if profile == "" {
@@ -459,6 +454,9 @@ func watchAliasFile() {
 
 func main() {
 	ConfigLoad()
+	defer closeLogger()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+	defer stop()
 
 	log.Debug().
 		Str("version", appVersion).
@@ -477,6 +475,38 @@ func main() {
 
 	// Start watching alias file for changes
 	watchAliasFile()
+
+	var manager *acmeManager
+	if *acmeEnabled {
+		opts, err := loadACMEOptions()
+		if err != nil {
+			log.Fatal().Err(err).Msg("invalid ACME configuration")
+		}
+		hasTLS := false
+		for _, listen := range listenAddrs {
+			hasTLS = hasTLS || listen.protocol == "tls" || listen.protocol == "starttls"
+		}
+		if !hasTLS {
+			log.Fatal().Msg("acme_enabled requires a TLS or STARTTLS listener")
+		}
+		manager, err = newACMEManager(opts, &legoIssuer{opts: opts})
+		if err != nil {
+			log.Fatal().Err(err).Msg("cannot initialize ACME storage")
+		}
+		manager.notify = func(ctx context.Context, retryAt time.Time) {
+			notifyACMEFailure(ctx, opts, retryAt)
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			manager.Run(ctx)
+		}()
+		defer func() { stop(); <-done }()
+		log.Info().Msg("waiting for a valid ACME certificate before starting SMTP listeners")
+		if err := manager.WaitReady(ctx); err != nil {
+			return
+		}
+	}
 
 	var servers []*smtpd.Server
 
@@ -512,14 +542,14 @@ func main() {
 			lsnr, err = net.Listen("tcp", listen.address)
 
 		case "starttls":
-			server.TLSConfig = getTLSConfig()
+			server.TLSConfig = getTLSConfig(manager)
 			server.ForceTLS = *localForceTLS
 
 			logger.Info().Msg("listening on address (STARTTLS)")
 			lsnr, err = net.Listen("tcp", listen.address)
 
 		case "tls":
-			server.TLSConfig = getTLSConfig()
+			server.TLSConfig = getTLSConfig(manager)
 
 			logger.Info().Msg("listening on address (TLS)")
 			lsnr, err = tls.Listen("tcp", listen.address, server.TLSConfig)
@@ -542,7 +572,8 @@ func main() {
 		}()
 	}
 
-	handleSignals()
+	<-ctx.Done()
+	log.Info().Msg("shutting down in response to received signal")
 
 	// First close the listeners
 	for _, server := range servers {
@@ -570,16 +601,4 @@ func main() {
 
 	log.Debug().Msg("done")
 
-	closeLogger()
-}
-
-func handleSignals() {
-	// Wait for SIGINT, SIGQUIT, or SIGTERM
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-	sig := <-sigs
-
-	log.Info().
-		Str("signal", sig.String()).
-		Msg("shutting down in response to received signal")
 }

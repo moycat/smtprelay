@@ -49,6 +49,14 @@ var (
 	strictSender     = flagset.Bool("strict_sender", false, "Use only SMTP servers with Sender matches to From")
 	remoteCert       = flagset.String("remote_certificate", "", "Client SSL certificate for remote STARTTLS/TLS")
 	remoteKey        = flagset.String("remote_key", "", "Client SSL private key for remote STARTTLS/TLS")
+	acmeEnabled      = flagset.Bool("acme_enabled", false, "Automatically manage TLS certificates using Cloudflare DNS")
+	acmeDomains      = flagset.String("acme_domains", "", "Space or comma separated certificate DNS names")
+	acmeEmail        = flagset.String("acme_email", "", "ACME account contact email")
+	acmeDirectory    = flagset.String("acme_directory", "https://acme-v02.api.letsencrypt.org/directory", "ACME directory URL")
+	acmeStorage      = flagset.String("acme_storage", "acme", "Persistent directory for ACME account and certificates")
+	acmeCFTokenFile  = flagset.String("acme_cf_token_file", "", "Path to Cloudflare API token file (expected permissions 0600)")
+	acmeNotifyTo     = flagset.String("acme_notify_to", "", "Comma separated recipients for ACME failure notifications (empty disables)")
+	acmeNotifyFrom   = flagset.String("acme_notify_from", "", "Sender address for ACME notifications via existing remotes")
 
 	// additional flags
 	_           = flagset.String("config", "", "Path to config file (ini format)")

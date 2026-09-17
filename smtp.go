@@ -18,6 +18,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
@@ -200,7 +201,7 @@ func (c *Client) Auth(a smtp.Auth) error {
 		return err
 	}
 	encoding := base64.StdEncoding
-	mech, resp, err := a.Start(&smtp.ServerInfo{c.serverName, c.tls, c.auth})
+	mech, resp, err := a.Start(&smtp.ServerInfo{Name: c.serverName, TLS: c.tls, Auth: c.auth})
 	if err != nil {
 		c.Quit()
 		return err
@@ -321,6 +322,12 @@ var testHookStartTLS func(*tls.Config) // nil, except for tests
 // functionality. Higher-level packages exist outside of the standard
 // library.
 func SendMail(r *Remote, from string, to []string, msg []byte) error {
+	return SendMailContext(context.Background(), r, from, to, msg)
+}
+
+// SendMailContext allows background notifications to cancel or time out every
+// part of delivery, including the greeting, TLS handshake, and DATA response.
+func SendMailContext(ctx context.Context, r *Remote, from string, to []string, msg []byte) error {
 	if r.Sender != "" {
 		from = r.Sender
 	}
@@ -333,8 +340,19 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 			return err
 		}
 	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", r.Addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return err
+		}
+	}
 	var c *Client
-	var err error
 	if r.Scheme == "smtps" {
 		config := &tls.Config{
 			ServerName:         r.Hostname,
@@ -348,12 +366,11 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 			}
 			config.Certificates = []tls.Certificate{cert}
 		}
-		conn, err := tls.Dial("tcp", r.Addr, config)
-		if err != nil {
+		tlsConn := tls.Client(conn, config)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
 			return err
 		}
-		defer conn.Close()
-		c, err = NewClient(conn, r.Hostname)
+		c, err = NewClient(tlsConn, r.Hostname)
 		if err != nil {
 			return err
 		}
@@ -361,7 +378,7 @@ func SendMail(r *Remote, from string, to []string, msg []byte) error {
 			return err
 		}
 	} else {
-		c, err = Dial(r.Addr)
+		c, err = NewClient(conn, r.Hostname)
 		if err != nil {
 			return err
 		}
