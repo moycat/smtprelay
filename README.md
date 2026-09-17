@@ -24,10 +24,17 @@ device which produces mail.
 
 * Simple configuration with ini file .env file or environment variables
 * Supports SMTPS/TLS (465), STARTTLS (587) and unencrypted SMTP (25)
-* Checks for sender, receiver, client IP
+* Checks for sender (SMTP MAIL FROM and message From header), receiver, client IP
 * Authentication support with file (LOGIN, PLAIN)
 * Enforce encryption for authentication
 * Forwards all mail to a smarthost (any SMTP server)
 * Small codebase
 * IPv6 support
 * Aliases support (dynamic reload when alias file changes)
+
+Sender restrictions (`allowed_sender` and authenticated users' allowed addresses)
+apply to both the SMTP envelope sender and every mailbox in the message's `From`
+header. When a sender restriction applies, a missing, malformed, or duplicate
+`From` header is rejected after DATA, before forwarding or running an external
+command. Display names are not used for address matching. The envelope sender and
+header addresses may differ as long as each is allowed.

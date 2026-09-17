@@ -40,7 +40,7 @@ var (
 	maxMessageSize   = flagset.Int("max_message_size", 10240000, "Max message size in bytes")
 	maxRecipients    = flagset.Int("max_recipients", 100, "Max RCPT TO calls for each envelope")
 	allowedNetsStr   = flagset.String("allowed_nets", "127.0.0.0/8 ::1/128", "Networks allowed to send mails")
-	allowedSenderStr = flagset.String("allowed_sender", "", "Regular expression for valid FROM EMail addresses")
+	allowedSenderStr = flagset.String("allowed_sender", "", "Regular expression for valid MAIL FROM and From header addresses")
 	allowedRecipStr  = flagset.String("allowed_recipients", "", "Regular expression for valid TO EMail addresses")
 	allowedUsers     = flagset.String("allowed_users", "", "Path to file with valid users/passwords")
 	aliasFile        = flagset.String("aliases_file", "", "Path to aliases file")
@@ -73,12 +73,12 @@ func localAuthRequired() bool {
 func remoteCertAndKeyReadable() bool {
 	certSet := *remoteCert != ""
 	keySet := *remoteKey != ""
-	
+
 	// Both must be set or both must be unset
 	if certSet != keySet {
 		return false
 	}
-	
+
 	// If both are set, verify files exist and are accessible
 	if certSet && keySet {
 		if _, err := os.Stat(*remoteCert); err != nil {
@@ -96,7 +96,7 @@ func remoteCertAndKeyReadable() bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 

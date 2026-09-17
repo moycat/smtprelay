@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/textproto"
 	"os"
 	"os/exec"
@@ -154,7 +155,46 @@ func authChecker(peer smtpd.Peer, username string, password string) error {
 	return nil
 }
 
+func headerSenderChecker(peer smtpd.Peer, data []byte) error {
+	if allowedSender == nil {
+		if !localAuthRequired() || peer.Username == "" {
+			return nil
+		}
+		user, err := AuthFetch(peer.Username)
+		if err != nil {
+			return smtpd.Error{Code: 451, Message: "Bad sender address"}
+		}
+		if user.allowedAddresses == nil {
+			return nil
+		}
+	}
+
+	message, err := mail.ReadMessage(bytes.NewReader(data))
+	if err != nil {
+		return smtpd.Error{Code: 554, Message: "Invalid message headers"}
+	}
+	// Reject ambiguous duplicate headers instead of checking only the first one.
+	if len(message.Header["From"]) != 1 {
+		return smtpd.Error{Code: 554, Message: "Exactly one From header is required"}
+	}
+	addresses, err := message.Header.AddressList("From")
+	if err != nil || len(addresses) == 0 {
+		return smtpd.Error{Code: 554, Message: "Invalid From header"}
+	}
+	for _, address := range addresses {
+		// Check the mailbox, not the display name, using the envelope policy.
+		if err := senderChecker(peer, address.Address); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
+	if err := headerSenderChecker(peer, env.Data); err != nil {
+		return err
+	}
+
 	peerIP := ""
 	if addr, ok := peer.Addr.(*net.TCPAddr); ok {
 		peerIP = addr.IP.String()
