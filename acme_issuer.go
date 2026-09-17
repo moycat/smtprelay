@@ -22,6 +22,7 @@ import (
 	"github.com/go-acme/lego/v5/acme/api"
 	"github.com/go-acme/lego/v5/certcrypto"
 	"github.com/go-acme/lego/v5/certificate"
+	"github.com/go-acme/lego/v5/challenge/dns01"
 	"github.com/go-acme/lego/v5/lego"
 	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
 	"github.com/go-acme/lego/v5/registration"
@@ -126,7 +127,7 @@ func (l *legoIssuer) Obtain(ctx context.Context, previous []byte) (acmeCertifica
 	if err != nil {
 		return result, err
 	}
-	if err := client.Challenge.SetDNS01Provider(provider); err != nil {
+	if err := client.Challenge.SetDNS01Provider(provider, dns01.DisableRecursiveNSsPropagationRequirement()); err != nil {
 		return result, err
 	}
 	request := certificate.ObtainRequest{Domains: l.opts.Domains, Bundle: true, KeyType: certcrypto.RSA2048}

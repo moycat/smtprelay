@@ -40,6 +40,21 @@ header. When a sender restriction applies, a missing, malformed, or duplicate
 command. Display names are not used for address matching. The envelope sender and
 header addresses may differ as long as each is allowed.
 
+## Generate a password hash
+
+Run `smtprelay bcrypt` and enter the password at the prompt. Input is hidden;
+press Enter to print its bcrypt hash. This command does not load the server
+configuration or start SMTP listeners.
+
+Put the hash in the file configured by `allowed_users`, using this format:
+
+```text
+username bcrypt-hash [allowed-addresses]
+```
+
+The hash is written to standard output and the prompt to standard error, so
+`smtprelay bcrypt > password.hash` saves just the hash.
+
 ## Automatic TLS certificates (ACME)
 
 Enable ACME to obtain and renew the certificate used by all SMTPS and STARTTLS
@@ -70,6 +85,11 @@ its contents updates the token for the next attempt. The token needs both
 **Zone / Zone / Read** and **Zone / DNS / Edit**, limited to the DNS zones involved.
 See the [lego Cloudflare documentation](https://go-acme.github.io/lego/dns/cloudflare/)
 for DNS propagation settings.
+
+DNS discovery uses the system's default DNS resolvers. Propagation
+checks query the domain's authoritative nameservers directly and require each
+to return the expected TXT value. Allow outbound DNS queries on port 53 to
+the configured resolvers and the authoritative nameservers.
 
 `acme_domains` accepts space- or comma-separated DNS names, including wildcards;
 the DNS records used for validation must be publicly resolvable. Only these

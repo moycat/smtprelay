@@ -18,6 +18,7 @@ import (
 	"github.com/chrj/smtpd"
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
+	"golang.org/x/term"
 )
 
 func connectionChecker(peer smtpd.Peer) error {
@@ -453,6 +454,19 @@ func watchAliasFile() {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "bcrypt" {
+		if len(os.Args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: smtprelay bcrypt")
+			os.Exit(1)
+		}
+		if err := runBcrypt(func() ([]byte, error) {
+			return term.ReadPassword(int(os.Stdin.Fd()))
+		}, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	ConfigLoad()
 	defer closeLogger()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
