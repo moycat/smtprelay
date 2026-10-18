@@ -40,6 +40,39 @@ header. When a sender restriction applies, a missing, malformed, or duplicate
 command. Display names are not used for address matching. The envelope sender and
 header addresses may differ as long as each is allowed.
 
+Mail submission uses a privacy boundary before either smarthost or pipe delivery.
+The relay writes a `Received: by <hostname> ([<relay IP>]) id <uuid>; <UTC date>`
+trace; the same UUID appears in its local delivery log. This follows the
+[Postfix submission privacy model](https://www.postfix.org/postconf.5.html#smtpd_hide_client_session).
+Incoming routing, client-origin, SPF, authentication-result, ARC, and common
+vendor diagnostic headers are filtered.
+Other `X-` headers containing IP literals are filtered too. Connection addresses
+remain available to access controls and local logs. Pipe commands receive the
+sanitized message on standard input and envelope addresses in `SMTPRELAY_FROM`
+and `SMTPRELAY_TO`.
+
+IP literals in `Message-ID` and `Resent-Message-ID` trigger a new identifier;
+IP-bearing `References` and `In-Reply-To` fields are filtered, which can affect
+threading for those messages. Other headers, the MIME body, and attachments keep
+their original bytes. DKIM signatures covering changed fields or carrying copied
+headers are filtered; configure the smarthost to sign the outgoing message after
+this processing. This is a submission policy: prior hop traces are discarded.
+An integer `X-Smtprelay-Hop-Count` preserves a 50-hop loop limit across submissions;
+malformed or duplicate hop counters and ambiguous header syntax are rejected.
+Addresses deliberately written in ordinary content headers, bodies, attachments,
+or SMTP envelope addresses remain message content. The next mail server still
+sees the relay server's own network address.
+
+`public_ip = auto` detects the server's public egress address once at startup via
+HTTPS using `api64.ipify.org`, with a five-second timeout. The result is cached
+until restart. This works behind NAT without publishing a network interface's
+private address. On detection failure, the trace uses just the relay hostname.
+Set `public_ip` to an explicit public IPv4 or IPv6 address to skip discovery,
+especially when HTTP and SMTP use different egress routes. IPv6 is written as an
+`[IPv6:...]` address literal. No client connection address is used as a fallback.
+This privacy policy is for client submission, rather than an Internet MTA's
+transparent forwarding of existing hop records.
+
 ## Generate a password hash
 
 Run `smtprelay bcrypt` and enter the password at the prompt. Input is hidden;

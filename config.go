@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"regexp"
 	"strings"
@@ -27,6 +28,7 @@ var (
 	logFormat        = flagset.String("log_format", "default", "Log output format")
 	logLevel         = flagset.String("log_level", "info", "Minimum log level to output")
 	hostName         = flagset.String("hostname", "localhost.localdomain", "Server hostname")
+	publicIPStr      = flagset.String("public_ip", "auto", "Relay public IP in trace headers (auto detects public egress once at startup)")
 	welcomeMsg       = flagset.String("welcome_msg", "", "Welcome message for SMTP session")
 	listenStr        = flagset.String("listen", "127.0.0.1:25 [::1]:25", "Address and port to listen for incoming SMTP")
 	localCert        = flagset.String("local_cert", "", "SSL certificate for STARTTLS/TLS")
@@ -71,6 +73,7 @@ var (
 	allowedSender     *regexp.Regexp
 	allowedRecipients *regexp.Regexp
 	remotes           = []*Remote{}
+	relayPublicIP     netip.Addr
 	aliasesList       = AliasMap{}
 )
 

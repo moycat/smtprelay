@@ -197,6 +197,15 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 	if err := headerSenderChecker(peer, env.Data); err != nil {
 		return err
 	}
+	id := generateUUID()
+	if id == "" {
+		return smtpd.Error{Code: 421, Message: "Could not prepare message"}
+	}
+	data, err := prepareRelayMessage(env.Data, *hostName, id, time.Now(), relayPublicIP)
+	if err != nil {
+		return smtpd.Error{Code: 554, Message: "Invalid message headers"}
+	}
+	env.Data = data
 
 	peerIP := ""
 	if addr, ok := peer.Addr.(*net.TCPAddr); ok {
@@ -220,7 +229,7 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		Str("from", env.Sender).
 		Strs("to", env.Recipients).
 		Str("peer", peerIP).
-		Str("uuid", generateUUID()).
+		Str("uuid", id).
 		Logger()
 
 	var envRemotes []*Remote
@@ -240,18 +249,21 @@ func mailHandler(peer smtpd.Peer, env smtpd.Envelope) error {
 		return smtpd.Error{Code: 554, Message: "There are no appropriate remote_host or command"}
 	}
 
-	env.AddReceivedLine(peer)
-
 	if *command != "" {
 		cmdLogger := logger.With().Str("command", *command).Logger()
 
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 
-		environ := os.Environ()
+		var environ []string
+		for _, entry := range os.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			if name = strings.ToUpper(name); name != "SMTPRELAY_FROM" && name != "SMTPRELAY_TO" && name != "SMTPRELAY_PEER" {
+				environ = append(environ, entry)
+			}
+		}
 		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_FROM", env.Sender))
 		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_TO", env.Recipients))
-		environ = append(environ, fmt.Sprintf("%s=%s", "SMTPRELAY_PEER", peerIP))
 
 		cmd := exec.Cmd{
 			Env:  environ,
@@ -475,6 +487,14 @@ func main() {
 	log.Debug().
 		Str("version", appVersion).
 		Msg("starting smtprelay")
+	var publicIPErr error
+	relayPublicIP, publicIPErr = resolveRelayPublicIP(ctx, *publicIPStr)
+	if publicIPErr != nil {
+		if value := strings.TrimSpace(*publicIPStr); value != "" && !strings.EqualFold(value, "auto") {
+			log.Fatal().Err(publicIPErr).Msg("invalid public_ip configuration")
+		}
+		log.Warn().Err(publicIPErr).Msg("could not detect relay public IP; trace will identify the relay by hostname")
+	}
 
 	// Load allowed users file
 	if localAuthRequired() {
